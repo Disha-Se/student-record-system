@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Record System with Roles</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    :root {
+      --main-bg: #f5f7fa;
+      --card-bg: #ffffff;
+      --text: #333;
+      --accent: #4caf50;
+      --danger: #ff4d4d;
+      --btn: #007bff;
+    }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: var(--main-bg);
+      color: var(--text);
+      transition: background 0.3s, color 0.3s;
+    }
+    .dark-mode {
+      --main-bg: #121212;
+      --card-bg: #1e1e1e;
+      --text: #e0e0e0;
+      --accent: #81c784;
+      --danger: #ff6b6b;
+      --btn: #64b5f6;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 30px auto;
+      background: var(--card-bg);
+      padding: 25px 30px;
+      border-radius: 15px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    input, button {
+      padding: 12px;
+      margin: 8px 5px 15px 0;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      background: var(--btn);
+      color: white;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    .btn-danger { background: var(--danger); }
+    .btn-edit { background: var(--accent); }
+    .btn-export { background: #673ab7; }
+    .btn-toggle {
+      float: right;
+      margin-top: -40px;
+      background: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #ccc;
+    }
+    tr.top-performer {
+      background: #e8f5e9;
+      font-weight: bold;
+    }
+    #notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: var(--accent);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="notification"></div>
+
+<!-- Role Selection -->
+<div id="roleSelection" class="container">
+  <h2>👤 Select Role</h2>
+  <button onclick="selectRole('admin')">Login as Admin</button>
+  <button onclick="selectRole('student')">Login as Student</button>
+</div>
+
+<!-- Login -->
+<div id="loginContainer" class="container" style="display:none;">
+  <h2>🔐 Login</h2>
+  <input type="text" id="username" placeholder="Username">
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+</div>
+
+<!-- Admin Dashboard -->
+<div id="adminContainer" class="container" style="display:none;">
+  <h2>🎓 Admin Dashboard</h2>
+  <button class="btn-toggle" onclick="toggleDarkMode()">🌗 Toggle Theme</button>
+
+  <input type="text" id="roll" placeholder="Roll No">
+  <input type="text" id="name" placeholder="Name">
+  <input type="number" id="marks" placeholder="Marks">
+  <input type="text" id="class" placeholder="Class">
+  <button onclick="addOrUpdateStudent()">💾 Save</button>
+  <button onclick="clearForm()">🧹 Clear</button>
+  <button class="btn-danger" onclick="clearAll()">🗑️ Clear All</button>
+  <br>
+  <input type="text" id="search" placeholder="🔍 Search" onkeyup="searchStudent()">
+  <button class="btn-export" onclick="exportCSV()">⬇️ Export CSV</button>
+  <button onclick="sortByMarks()">🔼 Sort by Marks</button>
+  <button onclick="sortByName()">🔼 Sort by Name</button>
+  <button class="btn-export" onclick="generatePDF()">📄 Export PDF</button>
+  <p><strong>📊 Average Marks:</strong> <span id="avgMarks">0</span></p>
+
+  <table id="studentTable">
+    <thead>
+      <tr>
+        <th>Roll No</th>
+        <th>Name</th>
+        <th>Marks</th>
+        <th>Class</th>
+        <th>Date</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <canvas id="marksChart" width="400" height="150"></canvas>
+</div>
+
+<!-- Student Dashboard -->
+<div id="studentContainer" class="container" style="display:none;">
+  <h2>🎓 Student Dashboard</h2>
+  <p><strong>Roll No:</strong> <span id="studentRoll"></span></p>
+  <p><strong>Name:</strong> <span id="studentName"></span></p>
+  <p><strong>Marks:</strong> <span id="studentMarks"></span></p>
+  <p><strong>Class:</strong> <span id="studentClass"></span></p>
+</div>
+
+<script>
+  const adminCredentials = { username: 'admin', password: 'admin123' };
+  const studentCredentials = [
+    { username: 'Disha', password: 'disha123' },
+    { username: 'Ava', password: 'ava123' }
+  ];
+
+  let userRole = '';
+  let students = JSON.parse(localStorage.getItem("students")) || [];
+  let editIndex = -1;
+
+  function selectRole(role) {
+    userRole = role;
+    document.getElementById("roleSelection").style.display = "none";
+    document.getElementById("loginContainer").style.display = "block";
+  }
+
+  function login() {
+    const u = document.getElementById("username").value;
+    const p = document.getElementById("password").value;
+
+    if (userRole === 'admin' && u === adminCredentials.username && p === adminCredentials.password) {
+      document.getElementById("loginContainer").style.display = "none";
+      document.getElementById("adminContainer").style.display = "block";
+      showNotification("Admin login successful");
+      displayStudents();
+      drawChart();
+    } else if (userRole === 'student') {
+      const student = studentCredentials.find(s => s.username === u && s.password === p);
+      if (student) {
+        document.getElementById("loginContainer").style.display = "none";
+        document.getElementById("studentContainer").style.display = "block";
+        showNotification("Student login successful");
+        showStudentData(u);
+      } else {
+        showNotification("Invalid credentials", 'error');
+      }
+    }
+  }
+
+  function showStudentData(username) {
+    const student = students.find(s => s.name === username);
+    document.getElementById("studentRoll").innerText = student?.roll || "101";
+    document.getElementById("studentName").innerText = student?.name || "Disha";
+    document.getElementById("studentMarks").innerText = student?.marks || "90";
+    document.getElementById("studentClass").innerText = student?.className || "C";
+  }
+
+  function showNotification(msg, type = 'success') {
+    const note = document.getElementById("notification");
+    note.style.background = type === 'success' ? '#4caf50' : '#f44336';
+    note.innerText = msg;
+    note.style.display = "block";
+    setTimeout(() => note.style.display = "none", 2000);
+  }
+
+  function saveData() {
+    localStorage.setItem("students", JSON.stringify(students));
+    displayStudents();
+    drawChart();
+  }
+
+  function addOrUpdateStudent() {
+    const roll = document.getElementById("roll").value.trim();
+    const name = document.getElementById("name").value.trim();
+    const marks = parseFloat(document.getElementById("marks").value.trim());
+    const className = document.getElementById("class").value.trim();
+
+    if (!roll || !name || isNaN(marks) || !className) {
+      showNotification("All fields required", 'error');
+      return;
+    }
+
+    const student = { roll, name, marks, className, dateAdded: new Date() };
+
+    if (editIndex === -1) {
+      students.push(student);
+      showNotification("Student added");
+    } else {
+      students[editIndex] = student;
+      showNotification("Student updated");
+      editIndex = -1;
+    }
+
+    clearForm();
+    saveData();
+  }
+
+  function editStudent(index) {
+    const s = students[index];
+    document.getElementById("roll").value = s.roll;
+    document.getElementById("name").value = s.name;
+    document.getElementById("marks").value = s.marks;
+    document.getElementById("class").value = s.className;
+    editIndex = index;
+  }
+
+  function deleteStudent(index) {
+    if (confirm("Delete this record?")) {
+      students.splice(index, 1);
+      saveData();
+      showNotification("Deleted");
+    }
+  }
+
+  function clearForm() {
+    document.getElementById("roll").value = '';
+    document.getElementById("name").value = '';
+    document.getElementById("marks").value = '';
+    document.getElementById("class").value = '';
+    editIndex = -1;
+  }
+
+  function clearAll() {
+    if (confirm("Delete ALL records?")) {
+      students = [];
+      saveData();
+      showNotification("All records cleared");
+    }
+  }
+
+  function displayStudents(filtered = students) {
+    const tbody = document.querySelector("#studentTable tbody");
+    tbody.innerHTML = "";
+
+    const maxMark = Math.max(...students.map(s => s.marks), 0);
+    const avg = students.length ? (students.reduce((a, b) => a + b.marks, 0) / students.length).toFixed(2) : 0;
+    document.getElementById("avgMarks").innerText = avg;
+
+    filtered.forEach((s, i) => {
+      const row = `<tr class="${s.marks === maxMark ? 'top-performer' : ''}">
+        <td>${s.roll}</td>
+        <td>${s.name}</td>
+        <td>${s.marks}</td>
+        <td>${s.className}</td>
+        <td>${new Date(s.dateAdded).toLocaleDateString()}</td>
+        <td>
+          <button class="btn-edit" onclick="editStudent(${i})">Edit</button>
+          <button class="btn-danger" onclick="deleteStudent(${i})">Delete</button>
+        </td>
+      </tr>`;
+      tbody.innerHTML += row;
+    });
+  }
+
+  function searchStudent() {
+    const q = document.getElementById("search").value.toLowerCase();
+    const filtered = students.filter(s => s.name.toLowerCase().includes(q) || s.roll.includes(q));
+    displayStudents(filtered);
+  }
+
+  function sortByMarks() {
+    students.sort((a, b) => b.marks - a.marks);
+    saveData();
+  }
+
+  function sortByName() {
+    students.sort((a, b) => a.name.localeCompare(b.name));
+    saveData();
+  }
+
+  function exportCSV() {
+    let csv = "Roll No,Name,Marks,Class,Date\n";
+    students.forEach(s => {
+      csv += `${s.roll},${s.name},${s.marks},${s.className},${new Date(s.dateAdded).toLocaleDateString()}\n`;
+    });
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "students.csv";
+    link.click();
+  }
+
+  function drawChart() {
+    const ctx = document.getElementById("marksChart").getContext("2d");
+    if (window.myChart) window.myChart.destroy();
+
+    const names = students.map(s => s.name);
+    const marks = students.map(s => s.marks);
+
+    window.myChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: names,
+        datasets: [{
+          label: 'Marks',
+          data: marks,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  function toggleDarkMode() {
+    document.body.classList.toggle("dark-mode");
+  }
+
+  function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text('Student Record Report', 10, 10);
+    
+    let yPosition = 20;
+    students.forEach(student => {
+      doc.text(`Roll: ${student.roll} | Name: ${student.name} | Marks: ${student.marks} | Class: ${student.className}`, 10, yPosition);
+      yPosition += 10;
+    });
+    
+    doc.save('student_report.pdf');
+  }
+</script>
+
+</body>
+</html>
